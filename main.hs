@@ -1,5 +1,7 @@
 import Data.List
 import System.IO
+import Data.Char
+import qualified Data.Map as Map
 
 
 data Value =
@@ -27,6 +29,7 @@ instance Fractional Value where
 data Ast =
   Numa   Float   |
   Boola  Bool    |
+  Ida    String  |
   Add    Ast Ast |
   Mul    Ast Ast |
   Sub    Ast Ast |
@@ -34,6 +37,8 @@ data Ast =
   Equals Ast Ast |
   IsZero Ast
   deriving (Eq, Read, Show)
+
+type Env = Map.Map String Value
 
 
 main = do
@@ -47,17 +52,24 @@ main = do
       main
 
 run :: String -> Value
-run = eval . parse
+run = (eval $ Map.fromList [("a", Numv 1)]) . parse
 
-eval :: Ast -> Value
-eval (Numa  x) = Numv  x
-eval (Boola x) = Boolv x
-eval (Add x y) = (eval x) + (eval y)
-eval (Mul x y) = (eval x) * (eval y)
-eval (Sub x y) = (eval x) - (eval y)
-eval (Div x y) = (eval x) / (eval y)
-eval (Equals x y) = Boolv $ (eval x) == (eval y)
-eval (IsZero x)   = Boolv $ (eval x) == Numv 0
+eval :: Env -> Ast -> Value
+eval _ (Numa  x) = Numv  x
+eval _ (Boola x) = Boolv x
+eval e (Ida x)   = unbind x e
+eval e (Add x y) = (eval e x) + (eval e y)
+eval e (Mul x y) = (eval e x) * (eval e y)
+eval e (Sub x y) = (eval e x) - (eval e y)
+eval e (Div x y) = (eval e x) / (eval e y)
+eval e (Equals x y) = Boolv $ (eval e x) == (eval e y)
+eval e (IsZero x)   = Boolv $ (eval e x) == Numv 0
+
+unbind :: String -> Env -> Value
+unbind id e = case v of
+    (Just x) -> x
+    Nothing  -> error $ "id " ++ id ++ " not set!"
+  where v = Map.lookup id e
 
 parse :: String -> Ast
 parse s = (read . unwords . map token . words $ bpad) :: Ast
@@ -73,6 +85,7 @@ token "zero?" = "IsZero"
 token t
   | isFloat t  = "(Numa "  ++ t ++ ")"
   | isBool  t  = "(Boola " ++ t ++ ")"
+  | isId    t  = "(Ida \""   ++ t ++ "\")"
   | otherwise  = t
 
 
@@ -91,3 +104,6 @@ isBool :: String -> Bool
 isBool s = case (reads s) :: [(Bool, String)] of
   [(_, "")] -> True
   _         -> False
+
+isId :: String -> Bool
+isId (c:cs) = isAlpha c && all isAlphaNum cs
