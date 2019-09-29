@@ -16,9 +16,9 @@ instance Show Value where
 instance Num Value where
   (Numv x) + (Numv y) = Numv $ x + y
   (Numv x) * (Numv y) = Numv $ x * y
-  abs (Numv x) = Numv $ abs x
+  abs (Numv x)    = Numv $ abs x
   signum (Numv x) = Numv $ signum x
-  fromInteger x = Numv $ fromInteger x
+  fromInteger x   = Numv $ fromInteger x
   negate (Numv x) = Numv $ negate x
 
 instance Fractional Value where
@@ -35,14 +35,14 @@ data Ast =
   Sub    Ast Ast |
   Div    Ast Ast |
   Equals Ast Ast |
-  IsZero Ast
+  IsZero Ast     |
+  Assume [(Ast, Ast)] Ast
   deriving (Eq, Read, Show)
 
 type Env = Map.Map String Value
 
-
 main = do
-  putStr "arithmetic: "
+  putStr "lexical: "
   hFlush stdout
   exp <- getLine
   if null exp
@@ -52,28 +52,47 @@ main = do
       main
 
 run :: String -> Value
-run = (eval $ Map.fromList [("a", Numv 1)]) . parse
+run = (eval $ Map.empty) . parse
 
 eval :: Env -> Ast -> Value
 eval _ (Numa  x) = Numv  x
 eval _ (Boola x) = Boolv x
-eval e (Ida x)   = unbind x e
-eval e (Add x y) = (eval e x) + (eval e y)
-eval e (Mul x y) = (eval e x) * (eval e y)
-eval e (Sub x y) = (eval e x) - (eval e y)
-eval e (Div x y) = (eval e x) / (eval e y)
-eval e (Equals x y) = Boolv $ (eval e x) == (eval e y)
-eval e (IsZero x)   = Boolv $ (eval e x) == Numv 0
+eval m (Ida x)   = fetch m x
+eval m (Add x y) = (eval m x) + (eval m y)
+eval m (Mul x y) = (eval m x) * (eval m y)
+eval m (Sub x y) = (eval m x) - (eval m y)
+eval m (Div x y) = (eval m x) / (eval m y)
+eval m (Equals x y)  = Boolv $ (eval m x) == (eval m y)
+eval m (IsZero x)    = Boolv $ (eval m x) == Numv 0
+eval m (Assume bs x) = eval m' x
+  where m' = Map.union mb m
+        mb = elaborate m bs
 
-unbind :: String -> Env -> Value
-unbind id e = case v of
+elaborate :: Env -> [(Ast, Ast)] -> Env
+elaborate m =  Map.fromList . map f
+  where f (Ida x, e) = (x, eval m e)
+
+fetch :: Env -> String -> Value
+fetch m id = case v of
     (Just x) -> x
     Nothing  -> error $ "id " ++ id ++ " not set!"
-  where v = Map.lookup id e
+  where v = Map.lookup id m
+
 
 parse :: String -> Ast
 parse s = (read . unwords . map token . words $ bpad) :: Ast
-  where bpad = replace "(" " ( " . replace ")" " ) " $ s
+  where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
+
+alter :: Btree -> Btree
+alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "assume":ns'))
+  where (Bnode _ binds):exps = ns
+        ns' = (Bnode "(" binds'):exps'
+        binds' = intersperse comma . map toPair $ binds
+        toPair (Bnode _ xv) = Bnode "(" . intersperse comma $ xv
+        exps' = map alter exps
+        comma = Bleaf ","
+alter (Bnode b ns) = Bnode b $ map alter ns
+alter (Bleaf w) = Bleaf $ token w
 
 token :: String -> String
 token "+" = "Add"
@@ -87,6 +106,33 @@ token t
   | isBool  t  = "(Boola " ++ t ++ ")"
   | isId    t  = "(Ida \""   ++ t ++ "\")"
   | otherwise  = t
+
+
+data Btree =
+  Bnode String [Btree] |
+  Bleaf String
+  deriving (Eq, Read, Show)
+
+unpack :: Btree -> [String]
+unpack (Bleaf w)  = [w]
+unpack (Bnode b ns) = b : (foldr (++) [b'] $ map unpack ns)
+  where b' = if b == "[" then "]" else ")"
+
+pack :: [String] -> [Btree]
+pack [] = []
+pack all@(w:ws)
+  | isClose = []
+  | isOpen  = node : pack ws'
+  | otherwise = Bleaf w : pack ws
+  where isOpen  = w == "[" || w == "("
+        isClose = w == "]" || w == ")"
+        node = Bnode w $ pack ws
+        ws' = drop (area node) all
+        win = pack ws
+
+area :: Btree -> Int
+area (Bleaf _) = 1
+area (Bnode _ ns) = foldr (+) 2 $ map area ns
 
 
 replace :: (Eq a) => [a] -> [a] -> [a] -> [a]
