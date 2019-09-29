@@ -80,15 +80,15 @@ fetch m id = case v of
 
 
 parse :: String -> Ast
-parse s = (read . unwords . map token . words $ bpad) :: Ast
+parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: Ast
   where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
 
 alter :: Btree -> Btree
-alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "assume":ns'))
+alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
   where (Bnode _ binds):exps = ns
-        ns' = (Bnode "(" binds'):exps'
+        ns' = (Bnode "[" binds'):exps'
         binds' = intersperse comma . map toPair $ binds
-        toPair (Bnode _ xv) = Bnode "(" . intersperse comma $ xv
+        toPair (Bnode _ xv) = Bnode "(" . intersperse comma . map alter $ xv
         exps' = map alter exps
         comma = Bleaf ","
 alter (Bnode b ns) = Bnode b $ map alter ns
@@ -116,7 +116,7 @@ data Btree =
 unpack :: Btree -> [String]
 unpack (Bleaf w)  = [w]
 unpack (Bnode b ns) = b : (foldr (++) [b'] $ map unpack ns)
-  where b' = if b == "[" then "]" else ")"
+  where b' = if b == "[" then "]" else (if b == "(" then ")" else "")
 
 pack :: [String] -> [Btree]
 pack [] = []
