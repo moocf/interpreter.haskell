@@ -35,7 +35,11 @@ data Ast =
   Sub    Ast Ast |
   Div    Ast Ast |
   Equals Ast Ast |
+  And    Ast Ast |
+  Or     Ast Ast |
+  Not    Ast     |
   IsZero Ast     |
+  If Ast Ast Ast |
   Assume [(Ast, Ast)] Ast
   deriving (Eq, Read, Show)
 
@@ -63,7 +67,11 @@ eval m (Mul x y) = (eval m x) * (eval m y)
 eval m (Sub x y) = (eval m x) - (eval m y)
 eval m (Div x y) = (eval m x) / (eval m y)
 eval m (Equals x y)  = Boolv $ (eval m x) == (eval m y)
+eval m (And x y)     = Boolv $ eval m x == Boolv True && eval m y == Boolv True
+eval m (Or x y)      = Boolv $ eval m x == Boolv True || eval m y == Boolv True
+eval m (Not x)       = Boolv $ if eval m x == Boolv True then False else True
 eval m (IsZero x)    = Boolv $ (eval m x) == Numv 0
+eval m (If c t e)    = if eval m c == Boolv True then eval m t else eval m e
 eval m (Assume bs x) = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
@@ -100,7 +108,11 @@ token "*" = "Mul"
 token "-" = "Sub"
 token "/" = "Div"
 token "=" = "Equals"
+token "&" = "And"
+token "|" = "Or"
+token "~" = "Not"
 token "zero?" = "IsZero"
+token "if" = "If"
 token t
   | isFloat t  = "(Numa "  ++ t ++ ")"
   | isBool  t  = "(Boola " ++ t ++ ")"
