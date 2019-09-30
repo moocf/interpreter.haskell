@@ -5,6 +5,7 @@
 *.o
 *.out
 *.tex
+*.tex~
 *.toc
 
 # original ignores
