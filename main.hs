@@ -100,24 +100,22 @@ alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
         exps' = map alter exps
         comma = Bleaf ","
 alter (Bnode b ns) = Bnode b $ map alter ns
-alter (Bleaf w) = Bleaf $ token w
-
-token :: String -> String
-token "+" = "Add"
-token "*" = "Mul"
-token "-" = "Sub"
-token "/" = "Div"
-token "=" = "Equals"
-token "&" = "And"
-token "|" = "Or"
-token "~" = "Not"
-token "zero?" = "IsZero"
-token "if" = "If"
-token t
-  | isFloat t  = "(Numa "  ++ t ++ ")"
-  | isBool  t  = "(Boola " ++ t ++ ")"
-  | isId    t  = "(Ida \""   ++ t ++ "\")"
-  | otherwise  = t
+alter (Bleaf w) = Bleaf $ case w of
+  "+" -> "Add"
+  "*" -> "Mul"
+  "-" -> "Sub"
+  "/" -> "Div"
+  "=" -> "Equals"
+  "&" -> "And"
+  "|" -> "Or"
+  "~" -> "Not"
+  "zero?" -> "IsZero"
+  "if" -> "If"
+  w
+    | isFloat w  -> "(Numa "  ++ w ++ ")"
+    | isBool  w  -> "(Boola " ++ w ++ ")"
+    | isId    w  -> "(Ida \""   ++ w ++ "\")"
+    | otherwise  -> w
 
 
 data Btree =
