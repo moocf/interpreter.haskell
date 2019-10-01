@@ -1,12 +1,11 @@
 import Data.List
 import System.IO
-import Data.Char
 import qualified Data.Map as Map
 
 
 data Value =
-  Numv  Float |
-  Boolv Bool  |
+  Numv  Float  |
+  Boolv Bool   |
   Procv Env [Ast] Ast
   deriving (Eq)
 
@@ -32,15 +31,7 @@ data Ast =
   Numa   Float   |
   Boola  Bool    |
   Ida    String  |
-  Add    Ast Ast |
-  Mul    Ast Ast |
-  Sub    Ast Ast |
-  Div    Ast Ast |
-  Equals Ast Ast |
-  And    Ast Ast |
-  Or     Ast Ast |
-  Not    Ast     |
-  IsZero Ast     |
+  Primv  String  |
   If       Ast Ast Ast      |
   Assume   [(Ast, Ast)] Ast |
   Function [Ast] Ast        |
@@ -60,27 +51,32 @@ main = do
       main
 
 run :: String -> Value
-run = (eval $ Map.empty) . parse
+run = (eval $ Map.fromList def) . parse
+  where def = map f ops
+        f s = (s, Procv m fs $ Primv s)
+        ops = ["+", "*", "-", "/", "=", "&", "|", "~", "zero?"]
+        fs = [Ida "x", Ida "y"]
+        m = Map.empty
 
 eval :: Env -> Ast -> Value
 eval _ (Numa  x) = Numv  x
 eval _ (Boola x) = Boolv x
-eval m (Ida x)   = fetch m x
-eval m (Add x y) = (eval m x) + (eval m y)
-eval m (Mul x y) = (eval m x) * (eval m y)
-eval m (Sub x y) = (eval m x) - (eval m y)
-eval m (Div x y) = (eval m x) / (eval m y)
-eval m (Equals x y)  = Boolv $ (eval m x) == (eval m y)
-eval m (And x y)     = Boolv $ eval m x == Boolv True && eval m y == Boolv True
-eval m (Or x y)      = Boolv $ eval m x == Boolv True || eval m y == Boolv True
-eval m (Not x)       = Boolv $ if eval m x == Boolv True then False else True
-eval m (IsZero x)    = Boolv $ (eval m x) == Numv 0
-eval m (If c t e)    = if eval m c == Boolv True then eval m t else eval m e
-eval m (Assume bs x) = eval m' x
+eval m (Ida x)   = get m x
+eval m (Primv "+") = (get m "x") + (get m "y")
+eval m (Primv "*") = (get m "x") * (get m "y")
+eval m (Primv "-") = (get m "x") - (get m "y")
+eval m (Primv "/") = (get m "x") / (get m "y")
+eval m (Primv "=") = Boolv $ get m "x" == get m "y"
+eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
+eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
+eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
+eval m (Primv "zero?") = Boolv $ get m "x" == Numv 0
+eval m (If c t e)      = if eval m c == Boolv True then eval m t else eval m e
+eval m (Assume bs x)   = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
 eval m (Function fs b) = Procv m fs b
-eval m (Apply x ps) = eval m' b
+eval m (Apply x ps)    = eval m' b
   where m' = Map.union mf ml
         mf = elaborate m $ zip fs ps
         (Procv ml fs b) = eval m x
@@ -89,8 +85,8 @@ elaborate :: Env -> [(Ast, Ast)] -> Env
 elaborate m =  Map.fromList . map f
   where f (Ida x, e) = (x, eval m e)
 
-fetch :: Env -> String -> Value
-fetch m id = case v of
+get :: Env -> String -> Value
+get m id = case v of
     (Just x) -> x
     Nothing  -> error $ "id " ++ id ++ " not set!"
   where v = Map.lookup id m
@@ -105,6 +101,7 @@ parse' s = (unwords . unpack . alter . Bnode "" . pack . words $ bpad)
 
 
 alter :: Btree -> Btree
+alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns))
 alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
   where (Bnode _ bs):xs = ns
         ns' = (Bnode "[" bs'):xs'
@@ -122,23 +119,13 @@ alter (Bnode _ (Bleaf "@":x:ps)) = (Bnode "(" (Bleaf "Apply":x':ps'))
   where x' = alter x
         ps' = [Bnode "[" $ intersperse c . map alter $ ps]
         c = Bleaf ","
+alter (Bnode "(" ns) = alter $ Bnode "(" (Bleaf "@":ns)
 alter (Bnode b ns) = Bnode b $ map alter ns
 alter (Bleaf w) = Bleaf $ case w of
-  "+" -> "Add"
-  "*" -> "Mul"
-  "-" -> "Sub"
-  "/" -> "Div"
-  "=" -> "Equals"
-  "&" -> "And"
-  "|" -> "Or"
-  "~" -> "Not"
-  "zero?" -> "IsZero"
-  "if" -> "If"
   w
     | isFloat w  -> "(Numa "  ++ w ++ ")"
     | isBool  w  -> "(Boola " ++ w ++ ")"
-    | isId    w  -> "(Ida \""   ++ w ++ "\")"
-    | otherwise  -> w
+    | otherwise  -> "(Ida \""   ++ w ++ "\")"
 
 
 data Btree =
@@ -183,6 +170,3 @@ isBool :: String -> Bool
 isBool s = case (reads s) :: [(Bool, String)] of
   [(_, "")] -> True
   _         -> False
-
-isId :: String -> Bool
-isId (c:cs) = isAlpha c && all isAlphaNum cs
