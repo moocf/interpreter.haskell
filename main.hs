@@ -6,12 +6,14 @@ import qualified Data.Map as Map
 
 data Value =
   Numv  Float |
-  Boolv Bool
+  Boolv Bool  |
+  Procv Env [Ast] Ast
   deriving (Eq)
 
 instance Show Value where
   show (Numv x)  = show x
   show (Boolv x) = show x
+  show (Procv _ _ _) = "#<procedure>"
 
 instance Num Value where
   (Numv x) + (Numv y) = Numv $ x + y
@@ -39,8 +41,10 @@ data Ast =
   Or     Ast Ast |
   Not    Ast     |
   IsZero Ast     |
-  If Ast Ast Ast |
-  Assume [(Ast, Ast)] Ast
+  If       Ast Ast Ast      |
+  Assume   [(Ast, Ast)] Ast |
+  Function [Ast] Ast        |
+  Apply    Ast [Ast]
   deriving (Eq, Read, Show)
 
 type Env = Map.Map String Value
@@ -75,6 +79,11 @@ eval m (If c t e)    = if eval m c == Boolv True then eval m t else eval m e
 eval m (Assume bs x) = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
+eval m (Function fs b) = Procv m fs b
+eval m (Apply x ps) = eval m' b
+  where m' = Map.union mf ml
+        mf = elaborate m $ zip fs ps
+        (Procv ml fs b) = eval m x
 
 elaborate :: Env -> [(Ast, Ast)] -> Env
 elaborate m =  Map.fromList . map f
@@ -91,14 +100,28 @@ parse :: String -> Ast
 parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: Ast
   where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
 
+parse' s = (unwords . unpack . alter . Bnode "" . pack . words $ bpad)
+  where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
+
+
 alter :: Btree -> Btree
 alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
-  where (Bnode _ binds):exps = ns
-        ns' = (Bnode "[" binds'):exps'
-        binds' = intersperse comma . map toPair $ binds
-        toPair (Bnode _ xv) = Bnode "(" . intersperse comma . map alter $ xv
-        exps' = map alter exps
-        comma = Bleaf ","
+  where (Bnode _ bs):xs = ns
+        ns' = (Bnode "[" bs'):xs'
+        bs' = intersperse c . map pair $ bs
+        pair (Bnode _ xv) = Bnode "(" . intersperse c . map alter $ xv
+        xs' = map alter xs
+        c = Bleaf ","
+alter (Bnode _ (Bleaf "function":ns)) = (Bnode "(" (Bleaf "Function":ns'))
+  where (Bnode _ fs):xs = ns
+        ns' = (Bnode "[" fs'):xs'
+        fs' = intersperse c . map alter $ fs
+        xs' = map alter xs
+        c = Bleaf ","
+alter (Bnode _ (Bleaf "@":x:ps)) = (Bnode "(" (Bleaf "Apply":x':ps'))
+  where x' = alter x
+        ps' = [Bnode "[" $ intersperse c . map alter $ ps]
+        c = Bleaf ","
 alter (Bnode b ns) = Bnode b $ map alter ns
 alter (Bleaf w) = Bleaf $ case w of
   "+" -> "Add"
