@@ -6,8 +6,8 @@
 * Imports
 
 In lexical language, there are identifiers. For identifying them i used 
-==isAlpha== and ==isAlphaNum==, which are in ==Data.Char== package.
-For implementing ==assume==, haskell package ==Data.Map== is available.
+=isAlpha= and =isAlphaNum=, which are in =Data.Char= package.
+For implementing =assume=, haskell package =Data.Map= is available.
 
 #+NAME: imports
 #+BEGIN_SRC haskell
@@ -51,9 +51,9 @@ instance Fractional Value where
 
 * Abstract Syntax Tree
 
-The AST now additionally includes identifiers, called ==Ida==; logical
-operators called ==And==, ==Or==, ==Not==; conditional expression ==If==;
-and the identifier binding keyword ==Assume==.
+The AST now additionally includes identifiers, called =Ida=; logical
+operators called =And=, =Or=, =Not=; conditional expression =If=;
+and the identifier binding keyword =Assume=.
 
 #+NAME: data_ast
 #+BEGIN_SRC haskell
@@ -79,7 +79,7 @@ data Ast =
 
 * Environment
 
-The environment called ==Env== is simply a ==String== to ==Value== map.
+The environment called =Env= is simply a =String= to =Value= map.
 
 #+NAME: type_env
 #+BEGIN_SRC haskell
@@ -121,11 +121,11 @@ run = (eval $ Map.empty) . parse
 * Evaluator
 
 The =eval= function, as before, pattern matches with all constructors of AST.
-Here ==Ida== is simply a fetch from current environment. ==And==, ==Or==,
-==Not==, ==If== are pretty self explanatory except that you need to remember
-that we cannot simply return a boolean, it needs to be boxed. ==Assume== is
+Here =Ida= is simply a fetch from current environment. =And=, =Or=,
+=Not=, =If= are pretty self explanatory except that you need to remember
+that we cannot simply return a boolean, it needs to be boxed. =Assume= is
 executing the body in a new environment, which is a union of bindings (from
-==elaborate==) and the current environment.
+=elaborate=) and the current environment.
 
 #+NAME: eval
 #+BEGIN_SRC haskell
@@ -148,7 +148,7 @@ eval m (Assume bs x) = eval m' x
         mb = elaborate m bs
 #+END_SRC
 
-The ==elaborate== takes the current environment (for eval), the bindings,
+The =elaborate= takes the current environment (for eval), the bindings,
 and returns a new environment only from the bindings. This environment
 needs to be composed with the current environment, as is done before.
 
@@ -159,7 +159,7 @@ elaborate m =  Map.fromList . map f
   where f (Ida x, e) = (x, eval m e)
 #+END_SRC
 
-The ==fetch== does a lookup on the environment, which is a map, and if not
+The =fetch= does a lookup on the environment, which is a map, and if not
 available throws an error.
 
 #+NAME: fetch
@@ -177,8 +177,8 @@ fetch m id = case v of
 * Parser
 
 As before, i wanted to depend upon the =read= function to generate the AST.
-While its simple for ==Ida==, ==And==, ==Or==, ==Not==, ==If==, unfortunately
-it is not like that for ==Assume==. In order for ==Assume== to accept an array
+While its simple for =Ida=, =And=, =Or=, =Not=, =If=, unfortunately
+it is not like that for =Assume=. In order for =Assume= to accept an array
 of pairs (tuples) as bindings, the first bracket needs to be square (for array)
 and the second needs to be round (for pair). Additionally, each item needs to
 be separated by comma, and not just space.
@@ -186,7 +186,7 @@ be separated by comma, and not just space.
 In order to perform this alteration, the whole input string is converted to
 words, which is then converted to a hierarchical bracket tree. All alterations
 are performed upon this bracket tree. Finally, the bracket tree is converted to
-a string which can then be directly parsed through ==read== function.
+a string which can then be directly parsed through =read= function.
 
 Also we dont distinguish between square and round brackets, just like in racket,
 so square brackets are simply replaced with round brackets.
