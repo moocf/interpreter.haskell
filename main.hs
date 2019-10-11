@@ -41,7 +41,7 @@ data Ast =
 type Env = Map.Map String Value
 
 main = do
-  putStr "lexical: "
+  putStr "functional: "
   hFlush stdout
   exp <- getLine
   if null exp
