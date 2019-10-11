@@ -6,7 +6,8 @@ import qualified Data.Map as Map
 data Value =
   Numv  Float  |
   Boolv Bool   |
-  Procv Env [Ast] Ast
+  Procv Env [Ast] Ast |
+  Recuv Env Env [Ast] Ast
   deriving (Eq)
 
 instance Show Value where
@@ -32,16 +33,17 @@ data Ast =
   Boola  Bool    |
   Ida    String  |
   Primv  String  |
-  If       Ast Ast Ast      |
-  Assume   [(Ast, Ast)] Ast |
-  Function [Ast] Ast        |
-  Apply    Ast [Ast]
+  If        Ast Ast Ast      |
+  Assume    [(Ast, Ast)] Ast |
+  Assumerec [(Ast, Ast)] Ast |
+  Function  [Ast] Ast        |
+  Apply     Ast [Ast]
   deriving (Eq, Read, Show)
 
 type Env = Map.Map String Value
 
 main = do
-  putStr "functional: "
+  putStr "recursive: "
   hFlush stdout
   exp <- getLine
   if null exp
@@ -70,16 +72,29 @@ eval m (Primv "=") = Boolv $ get m "x" == get m "y"
 eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
 eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
 eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
-eval m (Primv "zero?") = Boolv $ get m "x" == Numv 0
-eval m (If c t e)      = if eval m c == Boolv True then eval m t else eval m e
-eval m (Assume bs x)   = eval m' x
+eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
+eval m (If c t e)       = if eval m c == Boolv True then eval m t else eval m e
+eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
-eval m (Function fs b) = Procv m fs b
-eval m (Apply x ps)    = eval m' b
+eval m (Assumerec bs x) = eval m' x
+  where m' = Map.union mb m
+        mb = recurse $ elaborate m bs
+eval m (Function fs b)  = Procv m fs b
+eval m (Apply x ps)     = eval m' b
   where m' = Map.union mf ml
         mf = elaborate m $ zip fs ps
-        (Procv ml fs b) = eval m x
+        (Procv ml fs b) = unrecurse $ eval m x
+
+unrecurse :: Value -> Value
+unrecurse (Recuv m mb fs b) = Procv m' fs b
+  where m' = Map.union (recurse mb) m
+unrecurse v = v
+
+recurse :: Env -> Env
+recurse mb = Map.map f mb
+  where f (Procv m fs b) = Recuv m mb fs b
+        f x = x
 
 elaborate :: Env -> [(Ast, Ast)] -> Env
 elaborate m =  Map.fromList . map f
@@ -101,7 +116,8 @@ parse' s = (unwords . unpack . alter . Bnode "" . pack . words $ bpad)
 
 
 alter :: Btree -> Btree
-alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns))
+alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns'))
+  where ns' = map alter ns
 alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
   where (Bnode _ bs):xs = ns
         ns' = (Bnode "[" bs'):xs'
@@ -109,6 +125,8 @@ alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
         pair (Bnode _ xv) = Bnode "(" . intersperse c . map alter $ xv
         xs' = map alter xs
         c = Bleaf ","
+alter (Bnode _ (Bleaf "assumerec":ns)) = (Bnode "(" (Bleaf "Assumerec":ns'))
+  where (Bnode _ (Bleaf _:ns')) = alter $ Bnode "(" (Bleaf "assume":ns)
 alter (Bnode _ (Bleaf "function":ns)) = (Bnode "(" (Bleaf "Function":ns'))
   where (Bnode _ fs):xs = ns
         ns' = (Bnode "[" fs'):xs'
