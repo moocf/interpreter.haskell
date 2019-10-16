@@ -14,6 +14,7 @@ instance Show Value where
   show (Numv x)  = show x
   show (Boolv x) = show x
   show (Procv _ _ _) = "#<procedure>"
+  show (Recuv _ _ _ _) = "#<procedure>"
 
 instance Num Value where
   (Numv x) + (Numv y) = Numv $ x + y
@@ -35,8 +36,8 @@ data Ast =
   Primv  String  |
   Ifte      Ast Ast Ast      |
   Assume    [(Ast, Ast)] Ast |
-  Assumerec [(Ast, Ast)] Ast |
   Function  [Ast] Ast        |
+  Recfun    [(Ast, [Ast], Ast)] Ast |
   Apply     Ast [Ast]
   deriving (Eq, Read, Show)
 
@@ -77,9 +78,10 @@ eval m (Ifte c t e)       = if eval m c == Boolv True then eval m t else eval m 
 eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
-eval m (Assumerec bs x) = eval m' x
+eval m (Recfun ps x) = eval m' x
   where m' = Map.union mb m
-        mb = recurse $ elaborate m bs
+        mb = recurse . elaborate m . map f $ ps
+        f (l, fs, b) = (l, Function fs b)
 eval m (Function fs b)  = Procv m fs b
 eval m (Apply x ps)     = eval m' b
   where m' = Map.union mf ml
@@ -125,13 +127,18 @@ alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
         pair (Bnode _ xv) = Bnode "(" . intersperse c . map alter $ xv
         xs' = map alter xs
         c = Bleaf ","
-alter (Bnode _ (Bleaf "assumerec":ns)) = (Bnode "(" (Bleaf "Assumerec":ns'))
-  where (Bnode _ (Bleaf _:ns')) = alter $ Bnode "(" (Bleaf "assume":ns)
 alter (Bnode _ (Bleaf "function":ns)) = (Bnode "(" (Bleaf "Function":ns'))
   where (Bnode _ fs):xs = ns
         ns' = (Bnode "[" fs'):xs'
         fs' = intersperse c . map alter $ fs
         xs' = map alter xs
+        c = Bleaf ","
+alter (Bnode _ (Bleaf "recfun":Bnode _ ps:e)) = (Bnode "(" (Bleaf "Recfun":Bnode "[" ps':e'))
+  where e' = map alter e
+        ps' = intersperse c . map proc $ ps
+        proc (Bnode _ (l:Bnode _ fs:b)) = Bnode "(" $ intersperse c $ l':(Bnode "[" fs'):b'
+          where (l', b') = (alter l, map alter b)
+                fs' = intersperse c . map alter $ fs
         c = Bleaf ","
 alter (Bnode _ (Bleaf "@":x:ps)) = (Bnode "(" (Bleaf "Apply":x':ps'))
   where x' = alter x
