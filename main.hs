@@ -33,7 +33,7 @@ data Ast =
   Boola  Bool    |
   Ida    String  |
   Primv  String  |
-  If        Ast Ast Ast      |
+  Ifte      Ast Ast Ast      |
   Assume    [(Ast, Ast)] Ast |
   Assumerec [(Ast, Ast)] Ast |
   Function  [Ast] Ast        |
@@ -73,7 +73,7 @@ eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
 eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
 eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
 eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
-eval m (If c t e)       = if eval m c == Boolv True then eval m t else eval m e
+eval m (Ifte c t e)       = if eval m c == Boolv True then eval m t else eval m e
 eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
@@ -116,7 +116,7 @@ parse' s = (unwords . unpack . alter . Bnode "" . pack . words $ bpad)
 
 
 alter :: Btree -> Btree
-alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns'))
+alter (Bnode _ (Bleaf "ifte":ns)) = (Bnode "(" (Bleaf "Ifte":ns'))
   where ns' = map alter ns
 alter (Bnode _ (Bleaf "assume":ns)) = (Bnode "(" (Bleaf "Assume":ns'))
   where (Bnode _ bs):xs = ns
