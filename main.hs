@@ -74,7 +74,7 @@ eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
 eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
 eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
 eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
-eval m (Ifte c t e)       = if eval m c == Boolv True then eval m t else eval m e
+eval m (Ifte c t e)     = if eval m c == Boolv True then eval m t else eval m e
 eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
@@ -112,10 +112,6 @@ get m id = case v of
 parse :: String -> Ast
 parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: Ast
   where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
-
-parse' s = (unwords . unpack . alter . Bnode "" . pack . words $ bpad)
-  where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
-
 
 alter :: Btree -> Btree
 alter (Bnode _ (Bleaf "ifte":ns)) = (Bnode "(" (Bleaf "Ifte":ns'))

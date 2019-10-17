@@ -1,2 +1,1 @@
-# popl_arithmetic
-arithmetic lang interpreter in haskell
+recursive lang interpreter in haskell
