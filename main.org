@@ -2,6 +2,12 @@
 #+AUTHOR: Subhajit Sahu (2018801013)
 
 
+* Test
+
+You can build the source with =ghc --make main=.
+Then try =./main=.
+
+
 
 * Imports
 
