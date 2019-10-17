@@ -78,11 +78,11 @@ eval m (Ifte c t e)       = if eval m c == Boolv True then eval m t else eval m 
 eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
+eval m (Function fs b)  = Procv m fs b
 eval m (Recfun ps x) = eval m' x
   where m' = Map.union mb m
         mb = recurse . elaborate m . map f $ ps
         f (l, fs, b) = (l, Function fs b)
-eval m (Function fs b)  = Procv m fs b
 eval m (Apply x ps)     = eval m' b
   where m' = Map.union mf ml
         mf = elaborate m $ zip fs ps

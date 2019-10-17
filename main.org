@@ -1,19 +1,18 @@
-#+TITLE: Lexical Lang
+#+TITLE: Recursive Lang
 #+AUTHOR: Subhajit Sahu (2018801013)
 
 
 
 * Imports
 
-In lexical language, there are identifiers. For identifying them i used 
-=isAlpha= and =isAlphaNum=, which are in =Data.Char= package.
-For implementing =assume=, haskell package =Data.Map= is available.
+In recursive language, identifiers are anything other than brackets,
+keywords, numbers, or booleans. Alphabet checking is no more used, so
+symbols can now be identifiers as well.
 
 #+NAME: imports
 #+BEGIN_SRC haskell
 import Data.List
 import System.IO
-import Data.Char
 import qualified Data.Map as Map
 #+END_SRC
 
@@ -21,18 +20,25 @@ import qualified Data.Map as Map
 
 * Values
 
-Expressible values are the same as before.
+Expressible values now include functions =Procv=. These take as input,
+their lexical environment, formals (as identifers), and body. The recursive
+functions are treated specially here =Recuv=. They additionally take as
+input (second) the binding environment, which is not circular (yet).
 
 #+NAME: data_value
 #+BEGIN_SRC haskell
 data Value =
-  Numv  Float |
-  Boolv Bool
+  Numv  Float  |
+  Boolv Bool   |
+  Procv Env [Ast] Ast |
+  Recuv Env Env [Ast] Ast
   deriving (Eq)
 
 instance Show Value where
   show (Numv x)  = show x
   show (Boolv x) = show x
+  show (Procv _ _ _) = "#<procedure>"
+  show (Recuv _ _ _ _) = "#<procedure>"
 
 instance Num Value where
   (Numv x) + (Numv y) = Numv $ x + y
@@ -51,35 +57,36 @@ instance Fractional Value where
 
 * Abstract Syntax Tree
 
-The AST now additionally includes identifiers, called =Ida=; logical
-operators called =And=, =Or=, =Not=; conditional expression =If=;
-and the identifier binding keyword =Assume=.
+The AST now additionally includes primitive functions, such as =zero?=,
+which are no more keywords, but predefined identifers. The =Primv=
+acts as the **body** of a procedure =Procv= and takes as input the
+string name of the primitive function it represents. The AST evaluator
+then based on the string, performs the desired primitive operation.
+
+The =Function= node takes as input the formals and body. Function
+application =Apply= takes an expression and the parameters. Since
+=Recfun= defines a number if recursive procedures, it takes an list
+of identifiers, formals, and bodies. Finally, the =if= keyword is
+renamed to =ifte=.
 
 #+NAME: data_ast
 #+BEGIN_SRC haskell
-data Ast =
   Numa   Float   |
   Boola  Bool    |
   Ida    String  |
-  Add    Ast Ast |
-  Mul    Ast Ast |
-  Sub    Ast Ast |
-  Div    Ast Ast |
-  Equals Ast Ast |
-  And    Ast Ast |
-  Or     Ast Ast |
-  Not    Ast     |
-  IsZero Ast     |
-  If Ast Ast Ast |
-  Assume [(Ast, Ast)] Ast
-  deriving (Eq, Read, Show)
+  Primv  String  |
+  Ifte      Ast Ast Ast      |
+  Assume    [(Ast, Ast)] Ast |
+  Function  [Ast] Ast        |
+  Recfun    [(Ast, [Ast], Ast)] Ast |
+  Apply     Ast [Ast]
 #+END_SRC
 
 
 
 * Environment
 
-The environment called =Env= is simply a =String= to =Value= map.
+The environment, as before, is simply a =String= to =Value= map.
 
 #+NAME: type_env
 #+BEGIN_SRC haskell
@@ -97,7 +104,7 @@ terminate.
 #+NAME: main
 #+BEGIN_SRC haskell
 main = do
-  putStr "lexical: "
+  putStr "recursive: "
   hFlush stdout
   exp <- getLine
   if null exp
@@ -107,45 +114,62 @@ main = do
       main
 #+END_SRC
 
-The run function is simply parses and evaluates a string with an empty
-environment (an empty map).
+The run function now simply parses and evaluates a string with an environment
+populated with primitive procedures. Each primitive procedure takes as input
+formals =x= and optionally =y=.
 
 #+NAME: run
 #+BEGIN_SRC haskell
 run :: String -> Value
-run = (eval $ Map.empty) . parse
+run = (eval $ Map.fromList def) . parse
+  where def = map f ops
+        f s = (s, Procv m fs $ Primv s)
+        ops = ["+", "*", "-", "/", "=", "&", "|", "~", "zero?"]
+        fs = [Ida "x", Ida "y"]
+        m = Map.empty
 #+END_SRC
 
 
 
 * Evaluator
 
-The =eval= function, as before, pattern matches with all constructors of AST.
-Here =Ida= is simply a fetch from current environment. =And=, =Or=,
-=Not=, =If= are pretty self explanatory except that you need to remember
-that we cannot simply return a boolean, it needs to be boxed. =Assume= is
-executing the body in a new environment, which is a union of bindings (from
-=elaborate=) and the current environment.
+The =eval= function now pattern matches against =Primv= for primitive bodies.
+Each primitive function "gets" its formals from its environemnt. Same is true
+for custom functions. As before, =Assume= is executing the body in a new
+environment, which is a union of bindings (from =elaborate=) and the current
+environment.
+
+A =Function= simply evaluates to a procedure, which is an expressible value.
+
 
 #+NAME: eval
 #+BEGIN_SRC haskell
 eval :: Env -> Ast -> Value
 eval _ (Numa  x) = Numv  x
 eval _ (Boola x) = Boolv x
-eval m (Ida x)   = fetch m x
-eval m (Add x y) = (eval m x) + (eval m y)
-eval m (Mul x y) = (eval m x) * (eval m y)
-eval m (Sub x y) = (eval m x) - (eval m y)
-eval m (Div x y) = (eval m x) / (eval m y)
-eval m (Equals x y)  = Boolv $ (eval m x) == (eval m y)
-eval m (And x y)     = Boolv $ eval m x == Boolv True && eval m y == Boolv True
-eval m (Or x y)      = Boolv $ eval m x == Boolv True || eval m y == Boolv True
-eval m (Not x)       = Boolv $ if eval m x == Boolv True then False else True
-eval m (IsZero x)    = Boolv $ (eval m x) == Numv 0
-eval m (If c t e)    = if eval m c == Boolv True then eval m t else eval m e
-eval m (Assume bs x) = eval m' x
+eval m (Ida x)   = get m x
+eval m (Primv "+") = (get m "x") + (get m "y")
+eval m (Primv "*") = (get m "x") * (get m "y")
+eval m (Primv "-") = (get m "x") - (get m "y")
+eval m (Primv "/") = (get m "x") / (get m "y")
+eval m (Primv "=") = Boolv $ get m "x" == get m "y"
+eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
+eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
+eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
+eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
+eval m (Ifte c t e)       = if eval m c == Boolv True then eval m t else eval m e
+eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
+eval m (Function fs b)  = Procv m fs b
+eval m (Recfun ps x) = eval m' x
+  where m' = Map.union mb m
+        mb = recurse . elaborate m . map f $ ps
+        f (l, fs, b) = (l, Function fs b)
+eval m (Apply x ps)     = eval m' b
+  where m' = Map.union mf ml
+        mf = elaborate m $ zip fs ps
+        (Procv ml fs b) = unrecurse $ eval m x
 #+END_SRC
 
 The =elaborate= takes the current environment (for eval), the bindings,
