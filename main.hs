@@ -1,5 +1,6 @@
 import Data.List
 import System.IO
+import Text.Printf
 import qualified Data.Map as Map
 
 
@@ -34,17 +35,24 @@ data Ast =
   Boola  Bool    |
   Ida    String  |
   Primv  String  |
-  Ifte      Ast Ast Ast      |
+  If        Ast Ast Ast      |
+  SetRef    Ast Ast          |
+  DeRef     Ast              |
+  NewRef    Ast              |
+  Seq       [Ast]            |
   Assume    [(Ast, Ast)] Ast |
   Function  [Ast] Ast        |
   Recfun    [(Ast, [Ast], Ast)] Ast |
   Apply     Ast [Ast]
   deriving (Eq, Read, Show)
 
-type Env = Map.Map String Value
+type Env   = Map.Map String Value
+type Store = [Value]
+type Ref   = Int
+
 
 main = do
-  putStr "recursive: "
+  putStr "stores: "
   hFlush stdout
   exp <- getLine
   if null exp
@@ -74,7 +82,7 @@ eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
 eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
 eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
 eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
-eval m (Ifte c t e)     = if eval m c == Boolv True then eval m t else eval m e
+eval m (If c t e)       = if eval m c == Boolv True then eval m t else eval m e
 eval m (Assume bs x)    = eval m' x
   where m' = Map.union mb m
         mb = elaborate m bs
@@ -102,6 +110,22 @@ elaborate :: Env -> [(Ast, Ast)] -> Env
 elaborate m =  Map.fromList . map f
   where f (Ida x, e) = (x, eval m e)
 
+deref :: Store -> Ref -> Value
+deref s n
+  | n < l     = s !! n
+  | otherwise = error $ printf "store:%d does not have address %d" l n
+  where l = length s
+
+setref :: Store -> Ref -> Value -> Store
+setref s n v
+  | n < l     = take n s ++ [v] ++ drop (n+1) s
+  | otherwise = error $ printf "store:%d does not have address %d" l n
+  where l = length s
+
+newref :: Store -> Value -> (Ref, Store)
+newref s v = (l, s ++ [v])
+  where l = length s
+
 get :: Env -> String -> Value
 get m id = case v of
     (Just x) -> x
@@ -114,8 +138,16 @@ parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: 
   where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
 
 alter :: Btree -> Btree
-alter (Bnode _ (Bleaf "ifte":ns)) = (Bnode "(" (Bleaf "Ifte":ns'))
+alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns'))
   where ns' = map alter ns
+alter (Bnode _ (Bleaf "setref":ns)) = (Bnode "(" (Bleaf "SetRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "deref":ns)) = (Bnode "(" (Bleaf "DeRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "newref":ns)) = (Bnode "(" (Bleaf "NewRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "seq":Bnode _ xs:_)) = (Bnode "(" (Bleaf "Seq":Bnode "[" xs':[]))
+  where xs' = map alter xs
 alter (Bnode _ (Bleaf "assume":Bnode _ bs:e)) = (Bnode "(" (Bleaf "Assume":Bnode "[" bs':e'))
   where e' = map alter e
         bs' = intersperse c . map pair $ bs
