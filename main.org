@@ -1,4 +1,4 @@
-#+TITLE: Recursive Lang
+#+TITLE: Stores Lang
 #+AUTHOR: Subhajit Sahu (2018801013)
 
 
@@ -11,14 +11,13 @@ Then try =./main=.
 
 * Imports
 
-In recursive language, identifiers are anything other than brackets,
-keywords, numbers, or booleans. Alphabet checking is no more used, so
-symbols can now be identifiers as well.
+In stores language, printf is used for some error messages. Remaining as before.
 
 #+NAME: imports
 #+BEGIN_SRC haskell
 import Data.List
 import System.IO
+import Text.Printf
 import qualified Data.Map as Map
 #+END_SRC
 
@@ -26,10 +25,8 @@ import qualified Data.Map as Map
 
 * Values
 
-Expressible values now include functions =Procv=. These take as input,
-their lexical environment, formals (as identifers), and body. The recursive
-functions are treated specially here =Recuv=. They additionally take as
-input (second) the binding environment, which is not circular (yet).
+Expressible values are same as before. In class sir used a *Ref* datatype,
+but here numbers are references are the same.
 
 #+NAME: data_value
 #+BEGIN_SRC haskell
@@ -63,40 +60,43 @@ instance Fractional Value where
 
 * Abstract Syntax Tree
 
-The AST now additionally includes primitive functions, such as =zero?=,
-which are no more keywords, but predefined identifers. The =Primv=
-acts as the **body** of a procedure =Procv= and takes as input the
-string name of the primitive function it represents. The AST evaluator
-then based on the string, performs the desired primitive operation.
-
-The =Function= node takes as input the formals and body. Function
-application =Apply= takes an expression and the parameters. Since
-=Recfun= defines a number if recursive procedures, it takes an list
-of identifiers, formals, and bodies. Finally, the =if= keyword is
-renamed to =ifte=.
+The AST now additionally includes =SetRef=, =DeRef=, =NewRef=, and
+=Seq=. These are required to use the store, and =Seq= is used to
+execute expressions sequentially. The value of last expression is
+returned. =SetRef= also returns the value set.
 
 #+NAME: data_ast
 #+BEGIN_SRC haskell
+data Ast =
   Numa   Float   |
   Boola  Bool    |
   Ida    String  |
   Primv  String  |
-  Ifte      Ast Ast Ast      |
+  If        Ast Ast Ast      |
+  SetRef    Ast Ast          |
+  DeRef     Ast              |
+  NewRef    Ast              |
+  Seq       [Ast]            |
   Assume    [(Ast, Ast)] Ast |
   Function  [Ast] Ast        |
   Recfun    [(Ast, [Ast], Ast)] Ast |
   Apply     Ast [Ast]
+  deriving (Eq, Read, Show)
 #+END_SRC
 
 
 
-* Environment
+* Environment and Store
 
 The environment, as before, is simply a =String= to =Value= map.
+The store is a list of values, which is initially empty. And,
+=Ref= is just an =Int=.
 
 #+NAME: type_env
 #+BEGIN_SRC haskell
-type Env = Map.Map String Value
+type Env   = Map.Map String Value
+type Store = [Value]
+type Ref   = Int
 #+END_SRC
 
 
@@ -104,13 +104,13 @@ type Env = Map.Map String Value
 * Run
 
 The =main= function as before provides the REPL. It simply accepts a line
-and shows the output =Value= of =run= function. Use an empty (null) line to
-terminate.
+and shows the output =Store= and =Value= of =run= function. Use an empty
+(null) line to terminate.
 
 #+NAME: main
 #+BEGIN_SRC haskell
 main = do
-  putStr "recursive: "
+  putStr "stores: "
   hFlush stdout
   exp <- getLine
   if null exp
@@ -120,14 +120,15 @@ main = do
       main
 #+END_SRC
 
-The run function now simply parses and evaluates a string with an environment
-populated with primitive procedures. Each primitive procedure takes as input
-formals =x= and optionally =y=.
+The run function simply parses and evaluates a string with an empty store and
+an environment populated with primitive procedures. Each primitive procedure
+takes as input formals =x= and optionally =y=. Its returns the updated store,
+and a return value.
 
 #+NAME: run
 #+BEGIN_SRC haskell
-run :: String -> Value
-run = (eval $ Map.fromList def) . parse
+run :: String -> (Store, Value)
+run = (eval [] $ Map.fromList def) . parse
   where def = map f ops
         f s = (s, Procv m fs $ Primv s)
         ops = ["+", "*", "-", "/", "=", "&", "|", "~", "zero?"]
@@ -139,72 +140,54 @@ run = (eval $ Map.fromList def) . parse
 
 * Evaluator
 
-The =eval= function now pattern matches against =Primv= for primitive bodies.
-Each primitive function "gets" its formals from its environment. Same is true
-for custom functions. As before, =Assume= is executing the body in a new
-environment, which is a union of bindings (from =elaborate=) and the current
-environment.
-
-A =Function= simply evaluates to a procedure, which is an expressible value.
-
-Now, lets see what happens with a recursive function =Recfun=. A =Recfun= is
-an array of procedures along with an expression (like assume). Each procedure
-is a combination of label, formals, and function body. Note that the labels
-enable us to call the function within itself. The collection of procedures is
-a necessary feature as it enables to define recursive functions calling each
-other.
-
-I wanted to convert these procedures to pairs of labels and functions, so i
-could use the =elaborate=. The environment returned by =elaborate= contains
-mapping of labels to procedures =Procv=. The =recurse= function then
-translates these plain procedures to recursive procedures =Recuv=, which
-most importantly contains the additional bindings environment returned by
-=elaborate=. This is utilized during =Apply=.
-
-=Apply= of a function executes the function body in a new environment, which
-is the union of the lexical and the formal environment. The function to be
-executed is itself obtained from the evaluation of first expression. Similarly,
-to obtain the formals environment, the parameters are evaluated.
-
-For recursive functions, an additional thing is done. They are converted to plain
-procedures with the new lexical environment being the union of the lexical and
-bindings environment of the recursive function. Also, in preparation of a future
-recursive call, the bindings environment has its plain procedures changed to
-recursive ones. So, instead of preparing the environment right on lookup (as done
-in class), here we do it one step ahead in apply, that allows us to use the same
-simple lookup, and environment; but shifts the complexity to =Apply=.
+The =eval= function now returns a tuple containing the updated store and value
+(instead of just value). Only 2 keywords modify the store, namely =SetRef= and
+=NewRef=, and remaining AST nodes are evaluated with current store and environment
+to produce the same store, and a return value.
 
 #+NAME: eval
 #+BEGIN_SRC haskell
-eval :: Env -> Ast -> Value
-eval _ (Numa  x) = Numv  x
-eval _ (Boola x) = Boolv x
-eval m (Ida x)   = get m x
-eval m (Primv "+") = (get m "x") + (get m "y")
-eval m (Primv "*") = (get m "x") * (get m "y")
-eval m (Primv "-") = (get m "x") - (get m "y")
-eval m (Primv "/") = (get m "x") / (get m "y")
-eval m (Primv "=") = Boolv $ get m "x" == get m "y"
-eval m (Primv "&") = Boolv $ get m "x" == Boolv True && get m "y" == Boolv True
-eval m (Primv "|") = Boolv $ get m "x" == Boolv True || get m "y" == Boolv True
-eval m (Primv "~") = Boolv $ if get m "x" == Boolv True then False else True
-eval m (Primv "zero?")  = Boolv $ get m "x" == Numv 0
-eval m (Ifte c t e)     = if eval m c == Boolv True then eval m t else eval m e
-eval m (Assume bs x)    = eval m' x
+eval :: Store -> Env -> Ast -> (Store, Value)
+eval s _ (Numa  x) = (s, Numv  x)
+eval s _ (Boola x) = (s, Boolv x)
+eval s m (Ida x)   = (s, get m x)
+eval s m (Primv "+") = (s, (get m "x") + (get m "y"))
+eval s m (Primv "*") = (s, (get m "x") * (get m "y"))
+eval s m (Primv "-") = (s, (get m "x") - (get m "y"))
+eval s m (Primv "/") = (s, (get m "x") / (get m "y"))
+eval s m (Primv "=") = (s, Boolv $ get m "x" == get m "y")
+eval s m (Primv "&") = (s, Boolv $ get m "x" == Boolv True && get m "y" == Boolv True)
+eval s m (Primv "|") = (s, Boolv $ get m "x" == Boolv True || get m "y" == Boolv True)
+eval s m (Primv "~") = (s, Boolv $ if get m "x" == Boolv True then False else True)
+eval s m (Primv "zero?")  = (s, Boolv $ get m "x" == Numv 0)
+eval s m (If c t e)       = if snd (eval s m c) == Boolv True then eval s m t else eval s m e
+eval s m (SetRef n v)     = (setref s n' v', v')
+  where n' = toRef $ snd $ eval s m n
+        v' = snd $ eval s m v
+eval s m (DeRef n)        = (s, deref s n')
+  where n' = toRef $ snd $ eval s m n
+eval s m (NewRef v)       = (s', n')
+  where v' = snd $ eval s m v
+        (s', n) = newref s v'
+        n' = fromRef n
+eval s m (Seq xs)         = foldl f (s, Numv 0) xs
+  where f (s, _) x = eval s m x
+eval s m (Assume bs x)    = eval s m' x
   where m' = Map.union mb m
-        mb = elaborate m bs
-eval m (Function fs b)  = Procv m fs b
-eval m (Recfun ps x) = eval m' x
+        mb = elaborate s m bs
+eval s m (Function fs b)  = (s, Procv m fs b)
+eval s m (Recfun ps x) = eval s m' x
   where m' = Map.union mb m
-        mb = recurse . elaborate m . map f $ ps
+        mb = recurse . elaborate s m . map f $ ps
         f (l, fs, b) = (l, Function fs b)
-eval m (Apply x ps)     = eval m' b
+eval s m (Apply x ps)     = eval s m' b
   where m' = Map.union mf ml
-        mf = elaborate m $ zip fs ps
-        (Procv ml fs b) = unrecurse $ eval m x
+        mf = elaborate s m $ zip fs ps
+        (Procv ml fs b) = unrecurse $ snd $ eval s m x
 #+END_SRC
 
-Here are the =unrecurse=, =recurse=, =elaborate= functions.
+Here are the implementations of the support functions, =setref=,
+=deref=, and =newref=.
 
 #+NAME: elaborates
 #+BEGIN_SRC haskell
@@ -218,15 +201,26 @@ recurse mb = Map.map f mb
   where f (Procv m fs b) = Recuv m mb fs b
         f x = x
 
-elaborate :: Env -> [(Ast, Ast)] -> Env
-elaborate m =  Map.fromList . map f
-  where f (Ida x, e) = (x, eval m e)
-#+END_SRC
+elaborate :: Store -> Env -> [(Ast, Ast)] -> Env
+elaborate s m =  Map.fromList . map f
+  where f (Ida x, e) = (x, snd $ eval s m e)
 
-The =get= does a lookup on the environment.
+setref :: Store -> Ref -> Value -> Store
+setref s n v
+  | n < l     = take n s ++ [v] ++ drop (n+1) s
+  | otherwise = error $ printf "store:%d does not have address %d" l n
+  where l = length s
 
-#+NAME: get
-#+BEGIN_SRC haskell
+deref :: Store -> Ref -> Value
+deref s n
+  | n < l     = s !! n
+  | otherwise = error $ printf "store:%d does not have address %d" l n
+  where l = length s
+
+newref :: Store -> Value -> (Store, Ref)
+newref s v = (s ++ [v], l)
+  where l = length s
+
 get :: Env -> String -> Value
 get m id = case v of
     (Just x) -> x
@@ -239,31 +233,31 @@ get m id = case v of
 
 * Parser
 
-As before, i wanted to depend upon the =read= function to generate the AST.
-Keywords like =Assume=, =Function=, =Recfun=, and =Apply= make it necessary
-to use a sort of hierarchical bracket tree. This is because some brackets
-need to be converted to tuples, some to lists, and dont forget the commas.
-All alterations are performed upon the bracket tree. Finally, the bracket
-tree is converted to a string which can then be directly parsed through
-=read= function.
-
-Also we dont distinguish between square and round brackets, just like in racket,
-so square brackets are simply replaced with round brackets.
+As before, but we are ignore empty "." which are not necessary.
 
 #+NAME: parse
 #+BEGIN_SRC haskell
 parse :: String -> Ast
 parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: Ast
-  where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")" $ s
+  where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")". replace " . " " " $ s
 #+END_SRC
 
-Here is the alteration strategy.
+Here is the alteration strategy, for the new keywords.
 
 #+NAME: alter
 #+BEGIN_SRC haskell
 alter :: Btree -> Btree
-alter (Bnode _ (Bleaf "ifte":ns)) = (Bnode "(" (Bleaf "Ifte":ns'))
+alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns'))
   where ns' = map alter ns
+alter (Bnode _ (Bleaf "setref":ns)) = (Bnode "(" (Bleaf "SetRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "deref":ns)) = (Bnode "(" (Bleaf "DeRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "newref":ns)) = (Bnode "(" (Bleaf "NewRef":ns'))
+  where ns' = map alter ns
+alter (Bnode _ (Bleaf "seq":Bnode _ xs:_)) = (Bnode "(" (Bleaf "Seq":Bnode "[" xs':[]))
+  where xs' = intersperse c . map alter $ xs
+        c = Bleaf ","
 alter (Bnode _ (Bleaf "assume":Bnode _ bs:e)) = (Bnode "(" (Bleaf "Assume":Bnode "[" bs':e'))
   where e' = map alter e
         bs' = intersperse c . map pair $ bs
@@ -335,6 +329,12 @@ replace from to all@(x:xs)
   | from `isPrefixOf` all = to ++ (replace from to . drop (length from) $ all)
   | otherwise             = x : replace from to xs
 
+toRef :: Value -> Ref
+toRef (Numv n) = round n
+
+fromRef :: Ref -> Value
+fromRef n = Numv $ fromIntegral n
+
 isFloat :: String -> Bool
 isFloat s = case (reads s) :: [(Float, String)] of
   [(_, "")] -> True
@@ -368,8 +368,6 @@ isBool s = case (reads s) :: [(Bool, String)] of
 <<eval>>
 
 <<elaborates>>
-
-<<get>>
 
 
 <<parse>>

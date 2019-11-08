@@ -83,17 +83,15 @@ eval s m (Primv "|") = (s, Boolv $ get m "x" == Boolv True || get m "y" == Boolv
 eval s m (Primv "~") = (s, Boolv $ if get m "x" == Boolv True then False else True)
 eval s m (Primv "zero?")  = (s, Boolv $ get m "x" == Numv 0)
 eval s m (If c t e)       = if snd (eval s m c) == Boolv True then eval s m t else eval s m e
-eval s m (SetRef n v)     = (setref s n'' v', v')
-  where Numv n' = snd $ eval s m n
-        n'' = round n'
+eval s m (SetRef n v)     = (setref s n' v', v')
+  where n' = toRef $ snd $ eval s m n
         v' = snd $ eval s m v
-eval s m (DeRef n)        = (s, deref s n'')
-  where Numv n' = snd $ eval s m n
-        n'' = round n'
+eval s m (DeRef n)        = (s, deref s n')
+  where n' = toRef $ snd $ eval s m n
 eval s m (NewRef v)       = (s', n')
   where v' = snd $ eval s m v
         (s', n) = newref s v'
-        n' = Numv $ fromIntegral n
+        n' = fromRef n
 eval s m (Seq xs)         = foldl f (s, Numv 0) xs
   where f (s, _) x = eval s m x
 eval s m (Assume bs x)    = eval s m' x
@@ -223,6 +221,12 @@ replace _ _ [] = []
 replace from to all@(x:xs)
   | from `isPrefixOf` all = to ++ (replace from to . drop (length from) $ all)
   | otherwise             = x : replace from to xs
+
+toRef :: Value -> Ref
+toRef (Numv n) = round n
+
+fromRef :: Ref -> Value
+fromRef n = Numv $ fromIntegral n
 
 isFloat :: String -> Bool
 isFloat s = case (reads s) :: [(Float, String)] of
