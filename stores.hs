@@ -1,35 +1,9 @@
-#+TITLE: Stores Lang
-#+AUTHOR: Subhajit Sahu (2018801013)
-
-
-* Test
-
-You can build the source with =ghc --make main=.
-Then try =./main=.
-
-
-
-* Imports
-
-In stores language, printf is used for some error messages. Remaining as before.
-
-#+NAME: imports
-#+BEGIN_SRC haskell
 import Data.List
 import System.IO
 import Text.Printf
 import qualified Data.Map as Map
-#+END_SRC
 
 
-
-* Values
-
-Expressible values are same as before. In class sir used a *Ref* datatype,
-but here numbers are references are the same.
-
-#+NAME: data_value
-#+BEGIN_SRC haskell
 data Value =
   Numv  Float  |
   Boolv Bool   |
@@ -54,19 +28,8 @@ instance Num Value where
 instance Fractional Value where
   (Numv x) / (Numv y) = Numv $ x / y
   fromRational x = Numv $ fromRational x
-#+END_SRC
 
 
-
-* Abstract Syntax Tree
-
-The AST now additionally includes =SetRef=, =DeRef=, =NewRef=, and
-=Seq=. These are required to use the store, and =Seq= is used to
-execute expressions sequentially. The value of last expression is
-returned. =SetRef= also returns the value set.
-
-#+NAME: data_ast
-#+BEGIN_SRC haskell
 data Ast =
   Numa   Float   |
   Boola  Bool    |
@@ -82,33 +45,11 @@ data Ast =
   Recfun    [(Ast, [Ast], Ast)] Ast |
   Apply     Ast [Ast]
   deriving (Eq, Read, Show)
-#+END_SRC
 
-
-
-* Environment and Store
-
-The environment, as before, is simply a =String= to =Value= map.
-The store is a list of values, which is initially empty. And,
-=Ref= is just an =Int=.
-
-#+NAME: type_env
-#+BEGIN_SRC haskell
 type Env   = Map.Map String Value
 type Store = [Value]
 type Ref   = Int
-#+END_SRC
 
-
-
-* Run
-
-The =main= function as before provides the REPL. It simply accepts a line
-and shows the output =Store= and =Value= of =run= function. Use an empty
-(null) line to terminate.
-
-#+NAME: main
-#+BEGIN_SRC haskell
 main = do
   putStr "stores: "
   hFlush stdout
@@ -118,15 +59,7 @@ main = do
     else do
       putStrLn (show . run $ exp)
       main
-#+END_SRC
 
-The run function simply parses and evaluates a string with an empty store and
-an environment populated with primitive procedures. Each primitive procedure
-takes as input formals =x= and optionally =y=. Its returns the updated store,
-and a return value.
-
-#+NAME: run
-#+BEGIN_SRC haskell
 run :: String -> (Store, Value)
 run = (eval [] $ Map.fromList def) . parse
   where def = map f ops
@@ -134,19 +67,7 @@ run = (eval [] $ Map.fromList def) . parse
         ops = ["+", "*", "-", "/", "=", "&", "|", "~", "zero?"]
         fs = [Ida "x", Ida "y"]
         m = Map.empty
-#+END_SRC
 
-
-
-* Evaluator
-
-The =eval= function now returns a tuple containing the updated store and value
-(instead of just value). Only 2 keywords modify the store, namely =SetRef= and
-=NewRef=, and remaining AST nodes are evaluated with current store and environment
-to produce the same store, and a return value.
-
-#+NAME: eval
-#+BEGIN_SRC haskell
 eval :: Store -> Env -> Ast -> (Store, Value)
 eval s _ (Numa  x) = (s, Numv  x)
 eval s _ (Boola x) = (s, Boolv x)
@@ -184,13 +105,7 @@ eval s m (Apply x ps)     = eval s m' b
   where m' = Map.union mf ml
         mf = elaborate s m $ zip fs ps
         (Procv ml fs b) = unrecurse $ snd $ eval s m x
-#+END_SRC
 
-Here are the implementations of the support functions, =setref=,
-=deref=, and =newref=.
-
-#+NAME: elaborates
-#+BEGIN_SRC haskell
 unrecurse :: Value -> Value
 unrecurse (Recuv m mb fs b) = Procv m' fs b
   where m' = Map.union (recurse mb) m
@@ -226,26 +141,12 @@ get m id = case v of
     (Just x) -> x
     Nothing  -> error $ "id " ++ id ++ " not set!"
   where v = Map.lookup id m
-#+END_SRC
 
 
-
-
-* Parser
-
-As before, but we are ignore empty "." which are not necessary.
-
-#+NAME: parse
-#+BEGIN_SRC haskell
 parse :: String -> Ast
 parse s = (read . unwords . unpack . alter . Bnode "" . pack . words $ bpad) :: Ast
   where bpad = replace "(" " ( " . replace ")" " ) " . replace "[" "(" . replace "]" ")". replace " . " " " $ s
-#+END_SRC
 
-Here is the alteration strategy, for the new keywords.
-
-#+NAME: alter
-#+BEGIN_SRC haskell
 alter :: Btree -> Btree
 alter (Bnode _ (Bleaf "if":ns)) = (Bnode "(" (Bleaf "If":ns'))
   where ns' = map alter ns
@@ -285,13 +186,8 @@ alter (Bleaf w) = Bleaf $ case w of
     | isFloat w  -> "(Numa "  ++ w ++ ")"
     | isBool  w  -> "(Boola " ++ w ++ ")"
     | otherwise  -> "(Ida \""   ++ w ++ "\")"
-#+END_SRC
 
-Here are bracket tree functions, for converting words to bracket trees and
-vice versa.
 
-#+NAME: btree
-#+BEGIN_SRC haskell
 data Btree =
   Bnode String [Btree] |
   Bleaf String
@@ -317,12 +213,8 @@ pack all@(w:ws)
 area :: Btree -> Int
 area (Bleaf _) = 1
 area (Bnode _ ns) = foldr (+) 2 $ map area ns
-#+END_SRC
 
-And, here are a few utility functions we are using.
 
-#+NAME: utility
-#+BEGIN_SRC haskell
 replace :: (Eq a) => [a] -> [a] -> [a] -> [a]
 replace _ _ [] = []
 replace from to all@(x:xs)
@@ -344,39 +236,3 @@ isBool :: String -> Bool
 isBool s = case (reads s) :: [(Bool, String)] of
   [(_, "")] -> True
   _         -> False
-#+END_SRC
-
-
-
-* This is where you put it all together
-
-#+BEGIN_SRC haskell :eval no :noweb yes :tangle stores.hs
-<<imports>>
-
-
-<<data_value>>
-
-
-<<data_ast>>
-
-<<type_env>>
-
-<<main>>
-
-<<run>>
-
-<<eval>>
-
-<<elaborates>>
-
-
-<<parse>>
-
-<<alter>>
-
-
-<<btree>>
-
-
-<<utility>>
-#+END_SRC
